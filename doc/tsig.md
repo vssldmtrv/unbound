@@ -3,7 +3,7 @@
 ## Status
 
 - Branch: `d073579/per-server-tsig` (off `release-1.26.1`)
-- Current phase: **Phase 1 not yet started**
+- Current phase: **Phase 1 complete; Phase 2 next**
 - Last updated: 2026-09-24
 
 ## Purpose
@@ -221,7 +221,33 @@ new code.
 Six phases, ticked as each lands. Order chosen so the crypto is proven
 against RFC vectors before any daemon plumbing is touched.
 
-- [ ] **Phase 1** — `util/tsig.{c,h}`: HMAC-SHA256 + BIND key loader + unit vectors.
+- [x] **Phase 1** — `util/tsig.{c,h}`: HMAC-SHA256 + BIND key loader + unit vectors.
+      Delivered:
+      - `util/tsig.h`, `util/tsig.c`, `testcode/unittsig.c`.
+      - `tsig_key_load_bind_file()` parses BIND key stanzas, tolerates
+        C/C++/shell comments, enforces `hmac-sha256`, strict base64
+        alphabet, non-empty secret, and optional owner-name match.
+      - `tsig_sign_query()` appends a canonical TSIG RR (type 250,
+        class ANY, TTL 0, algorithm `hmac-sha256.`, 48-bit time signed,
+        fudge 300, full 32-byte MAC, Original ID mirroring the header,
+        Error 0, Other Len 0), grows the buffer, and increments ARCOUNT.
+      - Digest input follows RFC 8945 §4.3 exactly:
+        (message-without-TSIG) || (name, class, TTL, algorithm-name,
+         time-signed, fudge, error, other-len, other-data).
+      - HMAC-SHA-256 via `EVP_MAC` on OpenSSL 3.x, `HMAC_Init_ex` on
+        OpenSSL 1.x — mirrors the fallback pattern in
+        `util/net_help.c:1934`.
+      - Unit tests: RFC 4231 KATs 1/2/3, algorithm-mnemonic parser,
+        BIND-loader positive path + case-insensitivity + wrong-algorithm
+        + malformed-base64 + missing-directive + missing-file matrix,
+        structural checks on the appended TSIG RR, and a determinism +
+        independent-HMAC cross-check that recomputes the digest from
+        scratch and compares byte-for-byte against the embedded MAC.
+      - Registered in `Makefile.in` (COMMON_SRC/OBJ, UNITTEST_SRC/OBJ,
+        dependency rules); `tsig_test()` called from
+        `testcode/unitmain.c`.
+      - `make unittest` passes; the full `unbound`, `unbound-checkconf`,
+        `unbound-control`, `unbound-host` and `libunbound` link cleanly.
 - [ ] **Phase 2** — `services/tsig_server.{c,h}`: address→key table, lookup, swap.
 - [ ] **Phase 3** — Config: `tsig-key` and `server-tsig` grammar + parser
       + `struct config_file` fields + free/apply. Daemon wiring + reload.

@@ -1404,6 +1404,7 @@ main(int argc, char* argv[])
 	lruhash_test();
 	slabhash_test();
 	infra_test();
+	tsig_test();
 	ldns_test();
 	edns_cookie_test();
 	zonemd_test();
