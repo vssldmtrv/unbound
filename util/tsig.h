@@ -41,6 +41,22 @@ struct sldns_buffer;
 #define TSIG_FUDGE_SECONDS 300
 
 /**
+ * Worst-case wire size of a TSIG RR (RFC 8945 §4.2):
+ *   owner NAME (up to 255) + TYPE(2) + CLASS(2) + TTL(4) + RDLENGTH(2)
+ *   + RDATA:
+ *       Algorithm Name ("hmac-sha256." = 13)
+ *     + Time Signed (6) + Fudge (2)
+ *     + MAC Size (2) + MAC (32 for hmac-sha256)
+ *     + Original ID (2) + Error (2) + Other Len (2) + Other Data (0)
+ *   = 255 + 10 + 61 = 326 bytes.
+ *
+ * Used to reserve response headroom against the advertised EDNS UDP
+ * buffer size so a compliant server's TSIG-signed response fits
+ * without triggering TC->TCP fallback.
+ */
+#define TSIG_RR_MAX_WIRE_SIZE 326
+
+/**
  * TSIG algorithms supported by this implementation.
  * Wire-format algorithm names (canonical, lower-case, uncompressed)
  * are looked up from this enum via tsig_alg_name().

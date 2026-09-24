@@ -2984,6 +2984,13 @@ serviced_query_udp_size(struct serviced_query* sq, enum serviced_query_status st
 	} else {
 		udp_size = EDNS_ADVERTISED_SIZE;
 	}
+	/* When the query is TSIG-signed, RFC 8945 §5.3 requires the
+	 * server to attach a TSIG RR to its response. Shave the worst-
+	 * case TSIG RR size off the advertised buffer so a maximum-sized
+	 * response still fits without triggering the TC->TCP fallback.
+	 * The frag-size floors (1232/1472) leave ample room. */
+	if(sq->tsig_key && udp_size > TSIG_RR_MAX_WIRE_SIZE)
+		udp_size = (uint16_t)(udp_size - TSIG_RR_MAX_WIRE_SIZE);
 	return udp_size;
 }
 

@@ -361,11 +361,18 @@ against RFC vectors before any daemon plumbing is touched.
         `serviced_query_TCP_EDNS_fallback`) route through
         `serviced_encode` and re-enter the same UDP/TCP chokepoints,
         so they are signed automatically.
-      - **Size budgeting**: no change. `outnet->udp_buff` is
-        `msg_buffer_size` (default 65535) which trivially accommodates
-        the ~90-byte TSIG RR; overflow toward a server's response
-        would trigger the existing TC->TCP fallback machinery.
-        Documented in doc/tsig.md as an explicit non-change.
+      - **Response-size budgeting**: `serviced_query_udp_size()`
+        (outside_network.c:2972) now subtracts `TSIG_RR_MAX_WIRE_SIZE`
+        (326 bytes, the RFC 8945 worst case: 255-byte owner name +
+        RR/RDATA overhead + hmac-sha256 MAC + fixed fields) from the
+        advertised EDNS UDP payload size whenever `sq->tsig_key` is
+        set. This gives the server room to attach its own TSIG RR
+        (RFC 8945 §5.3 requires it) without truncating and triggering
+        a TC->TCP retry. The v4/v6 frag-size floors (1472/1232) leave
+        ample headroom (906/906+). The outgoing buffer itself is
+        unchanged; `outnet->udp_buff` (default 65535) accommodates
+        the appended TSIG trivially, and `tsig_sign_query()` grows
+        it via `sldns_buffer_reserve()` anyway.
       - Verified on the wire: `unbound -dd` forwarding
         `www.private.example.com` to a Python fake-auth on
         127.0.0.1:15400 produces a 134-byte packet whose bytes match
