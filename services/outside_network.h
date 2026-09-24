@@ -467,6 +467,9 @@ struct waiting_tcp {
 	int error_count;
 	/** if true, the item is at the cb_and_decommission stage */
 	int in_cb_and_decommission;
+	/** if true, pkt is TSIG-signed: the ID must not be re-selected
+	 * later (that would invalidate the MAC). See doc/tsig.md. */
+	int tsig_signed;
 #ifdef USE_DNSTAP
 	/** serviced query pointer for dnstap to get logging info, if nonNULL*/
 	struct serviced_query* sq;
@@ -576,6 +579,10 @@ struct serviced_query {
 	struct comm_timer* timer;
 	/** true if serviced_query is currently doing net I/O and may block */
 	int busy;
+	/** TSIG key to sign this query with, or NULL if this destination
+	 * has no server-tsig binding. Non-owning; the key is owned by
+	 * outnet->tsig_servers for the lifetime of the daemon-fork. */
+	const struct tsig_key* tsig_key;
 };
 
 /**

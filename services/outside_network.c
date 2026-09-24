@@ -48,6 +48,8 @@
 #include "services/outside_network.h"
 #include "services/listen_dnsport.h"
 #include "services/cache/infra.h"
+#include "services/tsig_server.h"
+#include "util/tsig.h"
 #include "iterator/iterator.h"
 #include "util/data/msgparse.h"
 #include "util/data/msgreply.h"
@@ -1014,9 +1016,13 @@ use_free_buffer(struct outside_network* outnet)
 			(outnet->tcp_reuse_first && outnet->tcp_reuse_last));
 		reuse = reuse_tcp_find(outnet, &w->addr, w->addrlen,
 			w->ssl_upstream, w->tls_auth_name);
-		/* re-select an ID when moving to a new TCP buffer */
-		w->id = tcp_select_id(outnet, reuse);
-		LDNS_ID_SET(w->pkt, w->id);
+		/* Re-select an ID when moving to a new TCP buffer, unless the
+		 * packet is TSIG-signed - in that case the ID is baked into
+		 * the MAC and must not change. See services/tsig_server.h. */
+		if(!w->tsig_signed) {
+			w->id = tcp_select_id(outnet, reuse);
+			LDNS_ID_SET(w->pkt, w->id);
+		}
 		if(reuse) {
 			log_reuse_tcp(VERB_CLIENT, "use free buffer for waiting tcp: "
 				"found reuse", reuse);
@@ -2300,6 +2306,19 @@ randomize_and_send_udp(struct pending* pend, sldns_buffer* packet, int timeout)
 	}
 	log_assert(pend->pc && pend->pc->cp);
 
+	/* Sign with TSIG if this destination is server-tsig-bound. Must
+	 * happen after select_id(): the MAC covers the final packet with
+	 * the real transaction ID. Signing failure aborts this send;
+	 * upper layers will treat it as a send error. */
+	if(pend->sq->tsig_key) {
+		if(!tsig_sign_query(packet, pend->sq->tsig_key,
+			*outnet->now_secs)) {
+			log_err("TSIG signing failed for outgoing UDP query");
+			portcomm_loweruse(outnet, pend->pc);
+			return 0;
+		}
+	}
+
 	/* send it over the commlink */
 	if(!comm_point_send_udp_msg(pend->pc->cp, packet,
 		(struct sockaddr*)&pend->addr, pend->addrlen, outnet->udp_connect)) {
@@ -2532,21 +2551,44 @@ pending_tcp_query(struct serviced_query* sq, sldns_buffer* packet,
 		log_assert(!reuse || (pend == reuse->pending));
 	}
 
-	/* allocate space to store query */
-	w = (struct waiting_tcp*)malloc(sizeof(struct waiting_tcp) 
-		+ sldns_buffer_limit(packet));
-	if(!w) {
-		return NULL;
+	/* Choose the transaction ID and, if TSIG-bound, sign the packet
+	 * NOW (before we snapshot it into w->pkt). The scratch buffer
+	 * `packet` can grow via sldns_buffer_reserve(); the per-stream
+	 * snapshot w->pkt is a fixed-size suffix of the waiting_tcp
+	 * allocation and cannot. TSIG must cover the final packet
+	 * including the real transaction ID; once signed, the packet
+	 * (including its ID) is immutable, so use_free_buffer() must
+	 * refuse to re-pick the ID (see w->tsig_signed). */
+	{
+		uint16_t tcp_id = tcp_select_id(sq->outnet, reuse);
+		int signed_here = 0;
+		LDNS_ID_SET(sldns_buffer_begin(packet), tcp_id);
+		if(sq->tsig_key) {
+			if(!tsig_sign_query(packet, sq->tsig_key,
+				*sq->outnet->now_secs)) {
+				log_err("TSIG signing failed for outgoing "
+					"TCP query");
+				return NULL;
+			}
+			signed_here = 1;
+		}
+		/* allocate space to store the (possibly signed) query */
+		w = (struct waiting_tcp*)malloc(sizeof(struct waiting_tcp)
+			+ sldns_buffer_limit(packet));
+		if(!w) {
+			return NULL;
+		}
+		if(!(w->timer = comm_timer_create(sq->outnet->base,
+			outnet_tcptimer, w))) {
+			free(w);
+			return NULL;
+		}
+		w->pkt = (uint8_t*)w + sizeof(struct waiting_tcp);
+		w->pkt_len = sldns_buffer_limit(packet);
+		memmove(w->pkt, sldns_buffer_begin(packet), w->pkt_len);
+		w->id = tcp_id;
+		w->tsig_signed = signed_here;
 	}
-	if(!(w->timer = comm_timer_create(sq->outnet->base, outnet_tcptimer, w))) {
-		free(w);
-		return NULL;
-	}
-	w->pkt = (uint8_t*)w + sizeof(struct waiting_tcp);
-	w->pkt_len = sldns_buffer_limit(packet);
-	memmove(w->pkt, sldns_buffer_begin(packet), w->pkt_len);
-	w->id = tcp_select_id(sq->outnet, reuse);
-	LDNS_ID_SET(w->pkt, w->id);
 	memcpy(&w->addr, &sq->addr, sq->addrlen);
 	w->addrlen = sq->addrlen;
 	w->outnet = sq->outnet;
@@ -2768,6 +2810,11 @@ serviced_create(struct outside_network* outnet, sldns_buffer* buff, int dnssec,
 	sq->retry = 0;
 	sq->to_be_deleted = 0;
 	sq->padding_block_size = pad_queries_block_size;
+	/* Resolve destination -> TSIG key once, at serviced-query creation.
+	 * Every retransmit and every send chokepoint reads sq->tsig_key
+	 * without re-doing the lookup. */
+	sq->tsig_key = tsig_server_table_lookup(outnet->tsig_servers,
+		&sq->addr, sq->addrlen);
 #ifdef UNBOUND_DEBUG
 	ins =
 #else

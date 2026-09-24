@@ -3,7 +3,7 @@
 ## Status
 
 - Branch: `d073579/per-server-tsig` (off `release-1.26.1`)
-- Current phase: **Phases 1–3 complete; Phase 4 next**
+- Current phase: **Phases 1–4 complete; Phase 5 next**
 - Last updated: 2026-09-24
 
 ## Purpose
@@ -325,10 +325,63 @@ against RFC vectors before any daemon plumbing is touched.
         1,133,217 checks; `unbound -dd` starts cleanly with a
         TSIG-enabled config and hard-fails on a bad key file at
         startup with the exact error surfaced from Phase 1.
-- [ ] **Phase 4** — Outnet integration: `sq->tsig_key`, lookup at
-      `serviced_create`, sign at UDP/TCP chokepoints, EDNS size
-      budgeting.
+- [x] **Phase 4** — Outnet integration: `sq->tsig_key`, lookup at
+      `serviced_create`, sign at UDP and TCP chokepoints. Verified
+      on the wire end-to-end.
+      Delivered:
+      - `struct serviced_query.tsig_key` (non-owning) resolved once
+        in `serviced_create` via
+        `tsig_server_table_lookup(outnet->tsig_servers, addr, addrlen)`.
+        Every retransmit and every send-path chokepoint reads the
+        cached pointer.
+      - **UDP hook**: `randomize_and_send_udp` (outside_network.c:2283)
+        signs `packet` after `select_id()` succeeds and before
+        `comm_point_send_udp_msg()`. The fd-wait-list path re-enters
+        this same function on drain, so the wait-list snapshot is
+        signed with a fresh timestamp when it's actually sent.
+        Signing failure aborts the send with a `portcomm_loweruse`
+        cleanup - the retry path handles it as a normal send error.
+      - **TCP hook**: signing happens inside `pending_tcp_query`
+        (outside_network.c:2515), *before* the packet is copied into
+        the fixed-size `w->pkt` snapshot. The TCP transaction ID is
+        chosen first, written into the scratch `sldns_buffer` via
+        `LDNS_ID_SET`, then `tsig_sign_query()` runs on the growable
+        scratch. The signed bytes (now including the RR) are copied
+        into `w->pkt`.
+      - **`struct waiting_tcp.tsig_signed`** flag: once a TCP packet
+        is signed, its ID must not change (that would invalidate the
+        MAC). `use_free_buffer()` (outside_network.c:1005) skips the
+        `tcp_select_id` re-pick when this flag is set, so a queued
+        TSIG-signed waiter keeps its original ID and MAC.
+      - **Retransmit / timestamps**: because each send goes through
+        `randomize_and_send_udp()` (UDP) or `pending_tcp_query()`
+        (TCP), a fresh Time Signed is used on every attempt without
+        further plumbing.
+      - **EDNS-fallback re-encode paths** (`serviced_query_UDP_EDNS_fallback`,
+        `serviced_query_TCP_EDNS_fallback`) route through
+        `serviced_encode` and re-enter the same UDP/TCP chokepoints,
+        so they are signed automatically.
+      - **Size budgeting**: no change. `outnet->udp_buff` is
+        `msg_buffer_size` (default 65535) which trivially accommodates
+        the ~90-byte TSIG RR; overflow toward a server's response
+        would trigger the existing TC->TCP fallback machinery.
+        Documented in doc/tsig.md as an explicit non-change.
+      - Verified on the wire: `unbound -dd` forwarding
+        `www.private.example.com` to a Python fake-auth on
+        127.0.0.1:15400 produces a 134-byte packet whose bytes match
+        the RFC 8945 TSIG RR layout exactly (owner `04 auth 04 corp
+        00`, type 250, class ANY, TTL 0, algorithm `hmac-sha256.`,
+        48-bit Time Signed, fudge 0x012c=300, MAC-Size 32, 32-byte
+        MAC, Original ID mirroring the header, Error 0, Other Len 0,
+        ARCOUNT=2). The identical config *without* `tsig-key`/
+        `server-tsig` produces a 52-byte unsigned packet with
+        ARCOUNT=1 (OPT only) - regression neutral.
+      - Unittest suite still passes 1,133,076 checks.
 - [ ] **Phase 5** — Integration test against BIND, Changelog, TODO.
+      Phase 4 already demonstrated a wire-level roundtrip against a
+      Python fake-auth; Phase 5 replaces that with a `named`-based
+      integration harness in `testdata/` (or the equivalent), plus
+      Changelog and TODO housekeeping.
 
 Estimated total effort: ~9.5–13 engineer-days.
 
