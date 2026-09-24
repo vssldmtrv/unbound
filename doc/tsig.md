@@ -3,7 +3,7 @@
 ## Status
 
 - Branch: `d073579/per-server-tsig` (off `release-1.26.1`)
-- Current phase: **Phases 1–2 complete; Phase 3 next**
+- Current phase: **Phases 1–3 complete; Phase 4 next**
 - Last updated: 2026-09-24
 
 ## Purpose
@@ -287,10 +287,44 @@ against RFC vectors before any daemon plumbing is touched.
         passes; duplicate address, dangling key reference, unparseable
         address, wrong algorithm in key file, and owner-name mismatch
         each yield a distinct fatal error with the correct exit code.
-- [ ] **Phase 3** — `services/tsig_server.{c,h}`: build the resolved
-      key store and address→key table at daemon apply time; atomic
-      swap on reload; hang the table off `struct outside_network`.
-      This is the runtime companion to Phase 2's static config.
+- [x] **Phase 3** — `services/tsig_server.{c,h}`: runtime resolved key
+      store + address→key lookup, wired into daemon + workers.
+      Delivered:
+      - `services/tsig_server.{h,c}`: `tsig_server_table_create()`,
+        `tsig_server_table_apply_cfg()`, `tsig_server_table_lookup()`,
+        `tsig_server_table_delete()`. Two rbtrees: `keys_by_name`
+        (owned `struct tsig_key*`) and `map_by_addr` (non-owning refs
+        into the name store). Address key is normalized on insert
+        and lookup: port, IPv6 scope, and flow-info zeroed; address
+        family is the discriminator.
+      - `apply_cfg` loads every `tsig-key` file with owner-name
+        cross-check, rejects duplicate names, unparseable addresses,
+        duplicate addresses, dangling key refs — mirrors the checkconf
+        matrix so a config that passed checkconf loads cleanly here.
+      - `struct daemon.tsig_servers` (owned) and
+        `struct outside_network.tsig_servers` (non-owning ref) added
+        with forward decls.
+      - `daemon_fork()`: builds the table after `forwards_apply_cfg`
+        when the config declares any TSIG state; `fatal_exit` on any
+        load error (defense-in-depth over checkconf).
+      - `daemon_cleanup()`: frees the table *after* workers are
+        deleted, so no in-flight `outside_network` can reference
+        freed memory. Reload rebuilds fresh (atomic swap by the
+        daemon-cleanup-then-daemon-fork sequence).
+      - `worker_init()`: sets `worker->back->tsig_servers =
+        worker->daemon->tsig_servers` right after `outside_network`
+        is created.
+      - `fptr_wlist.c`: whitelist entries for `tsig_name_cmp` and
+        `tsig_addr_cmp` so the rbtree pointer-check machinery accepts
+        the two comparators.
+      - Unit tests (testcode/unittsig.c): build+lookup with v4 and v6
+        (case-insensitive key ref, port-agnostic match, wrong-address
+        miss, NULL-table safety), and hard-fail matrix for dangling
+        key ref and duplicate address.
+      - Verified: `unbound-checkconf` matrix; `./unittest` passes
+        1,133,217 checks; `unbound -dd` starts cleanly with a
+        TSIG-enabled config and hard-fails on a bad key file at
+        startup with the exact error surfaced from Phase 1.
 - [ ] **Phase 4** — Outnet integration: `sq->tsig_key`, lookup at
       `serviced_create`, sign at UDP/TCP chokepoints, EDNS size
       budgeting.

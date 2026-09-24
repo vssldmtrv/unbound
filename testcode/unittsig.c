@@ -30,7 +30,9 @@
 #include "testcode/unitmain.h"
 #include "util/config_file.h"
 #include "util/log.h"
+#include "util/net_help.h"
 #include "util/tsig.h"
+#include "services/tsig_server.h"
 
 #ifdef HAVE_SSL
 
@@ -807,6 +809,182 @@ test_config_empty_still_parses(void)
 }
 
 /* ------------------------------------------------------------------ */
+/* tsig_server_table: runtime address->key lookup                     */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Build a config with one tsig-key and a couple of server-tsig
+ * bindings using a temp key file, then apply it to a table and
+ * exercise the lookup.
+ */
+static void
+test_server_table(void)
+{
+	const char* keyfile_body =
+		"key \"kx.example.\" {\n"
+		"    algorithm hmac-sha256;\n"
+		"    secret \"aGVsbG8=\";\n"
+		"};\n";
+	char* keypath = write_tempfile(keyfile_body);
+	struct config_file* cfg;
+	struct tsig_server_table* t;
+	struct sockaddr_storage sa;
+	socklen_t salen;
+	char* err = NULL;
+	const struct tsig_key* got;
+	char cfg_buf[1024];
+
+	unit_show_feature("tsig_server_table: build + lookup");
+
+	snprintf(cfg_buf, sizeof(cfg_buf),
+		"server:\n"
+		"    verbosity: 0\n"
+		"    use-syslog: no\n"
+		"    do-daemonize: no\n"
+		"    chroot: \"\"\n"
+		"    username: \"\"\n"
+		"    directory: \"\"\n"
+		"    pidfile: \"\"\n"
+		"tsig-key:\n"
+		"    name: \"kx.example.\"\n"
+		"    key-file: \"%s\"\n"
+		"server-tsig:\n"
+		"    address: 10.0.0.1\n"
+		"    key: \"kx.example.\"\n"
+		"server-tsig:\n"
+		"    address: 2001:db8::42\n"
+		"    key: \"KX.EXAMPLE\"\n"      /* case-insensitive ref */
+		, keypath);
+	cfg = parse_config_string(cfg_buf);
+
+	t = tsig_server_table_create();
+	unit_assert(t != NULL);
+	unit_assert(tsig_server_table_apply_cfg(t, cfg, &err));
+	unit_assert(err == NULL);
+
+	/* v4 hit, any port */
+	unit_assert(ipstrtoaddr("10.0.0.1", 53, &sa, &salen));
+	got = tsig_server_table_lookup(t, &sa, salen);
+	unit_assert(got != NULL);
+	unit_assert(got->secret_len == 5);
+	unit_assert(memcmp(got->secret, "hello", 5) == 0);
+
+	/* Different port on same IP still hits. */
+	unit_assert(ipstrtoaddr("10.0.0.1", 5353, &sa, &salen));
+	unit_assert(tsig_server_table_lookup(t, &sa, salen) == got);
+
+	/* v6 hit; case-insensitive key ref resolved. */
+	unit_assert(ipstrtoaddr("2001:db8::42", 53, &sa, &salen));
+	got = tsig_server_table_lookup(t, &sa, salen);
+	unit_assert(got != NULL);
+	unit_assert(got->secret_len == 5);
+
+	/* Wrong address misses. */
+	unit_assert(ipstrtoaddr("10.0.0.2", 53, &sa, &salen));
+	unit_assert(tsig_server_table_lookup(t, &sa, salen) == NULL);
+	unit_assert(ipstrtoaddr("::1", 53, &sa, &salen));
+	unit_assert(tsig_server_table_lookup(t, &sa, salen) == NULL);
+
+	/* NULL table is safe. */
+	unit_assert(tsig_server_table_lookup(NULL, &sa, salen) == NULL);
+
+	tsig_server_table_delete(t);
+	config_delete(cfg);
+	unlink(keypath);
+	free(keypath);
+}
+
+/**
+ * Reject a dangling server-tsig -> tsig-key reference.
+ */
+static void
+test_server_table_dangling_ref(void)
+{
+	struct config_file* cfg;
+	struct tsig_server_table* t;
+	char* err = NULL;
+
+	unit_show_feature(
+		"tsig_server_table: dangling key reference is hard-fail");
+
+	cfg = parse_config_string(
+		"server:\n"
+		"    verbosity: 0\n"
+		"    use-syslog: no\n"
+		"    do-daemonize: no\n"
+		"    chroot: \"\"\n"
+		"    username: \"\"\n"
+		"    directory: \"\"\n"
+		"    pidfile: \"\"\n"
+		"server-tsig:\n"
+		"    address: 10.0.0.1\n"
+		"    key: \"missing.\"\n"
+	);
+
+	t = tsig_server_table_create();
+	unit_assert(t != NULL);
+	unit_assert(!tsig_server_table_apply_cfg(t, cfg, &err));
+	unit_assert(err != NULL);
+	free(err);
+
+	tsig_server_table_delete(t);
+	config_delete(cfg);
+}
+
+/**
+ * Reject duplicate server-tsig addresses.
+ */
+static void
+test_server_table_dup_address(void)
+{
+	const char* keyfile_body =
+		"key \"k.\" {\n"
+		"    algorithm hmac-sha256;\n"
+		"    secret \"aGVsbG8=\";\n"
+		"};\n";
+	char* keypath = write_tempfile(keyfile_body);
+	struct config_file* cfg;
+	struct tsig_server_table* t;
+	char* err = NULL;
+	char cfg_buf[1024];
+
+	unit_show_feature(
+		"tsig_server_table: duplicate address is hard-fail");
+
+	snprintf(cfg_buf, sizeof(cfg_buf),
+		"server:\n"
+		"    verbosity: 0\n"
+		"    use-syslog: no\n"
+		"    do-daemonize: no\n"
+		"    chroot: \"\"\n"
+		"    username: \"\"\n"
+		"    directory: \"\"\n"
+		"    pidfile: \"\"\n"
+		"tsig-key:\n"
+		"    name: \"k.\"\n"
+		"    key-file: \"%s\"\n"
+		"server-tsig:\n"
+		"    address: 10.0.0.1\n"
+		"    key: \"k.\"\n"
+		"server-tsig:\n"
+		"    address: 10.0.0.1\n"
+		"    key: \"k.\"\n"
+		, keypath);
+	cfg = parse_config_string(cfg_buf);
+
+	t = tsig_server_table_create();
+	unit_assert(t != NULL);
+	unit_assert(!tsig_server_table_apply_cfg(t, cfg, &err));
+	unit_assert(err != NULL);
+	free(err);
+
+	tsig_server_table_delete(t);
+	config_delete(cfg);
+	unlink(keypath);
+	free(keypath);
+}
+
+/* ------------------------------------------------------------------ */
 /* Entry point                                                        */
 /* ------------------------------------------------------------------ */
 
@@ -826,6 +1004,9 @@ tsig_test(void)
 	test_sign_determinism_and_kat();
 	test_config_parse_tsig_blocks();
 	test_config_empty_still_parses();
+	test_server_table();
+	test_server_table_dangling_ref();
+	test_server_table_dup_address();
 }
 
 #else /* !HAVE_SSL */

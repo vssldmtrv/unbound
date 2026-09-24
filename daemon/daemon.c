@@ -80,6 +80,7 @@
 #include "util/edns.h"
 #include "services/listen_dnsport.h"
 #include "services/outside_network.h"
+#include "services/tsig_server.h"
 #include "services/cache/rrset.h"
 #include "services/cache/infra.h"
 #include "services/localzone.h"
@@ -1062,6 +1063,22 @@ daemon_fork(struct daemon* daemon)
 		!hints_apply_cfg(daemon->env->hints, daemon->cfg))
 		fatal_exit("Could not set root or stub hints");
 
+	/* Build the runtime TSIG address->key table. Only allocated
+	 * when the config actually declares TSIG so that resolvers
+	 * with no TSIG at all pay zero cost. Any load error is a
+	 * hard fail - unbound-checkconf already vets this. */
+	if(daemon->cfg->tsig_keys || daemon->cfg->server_tsigs) {
+		char* err = NULL;
+		if(!(daemon->tsig_servers = tsig_server_table_create()))
+			fatal_exit("Could not create TSIG server table: "
+				"out of memory");
+		if(!tsig_server_table_apply_cfg(daemon->tsig_servers,
+			daemon->cfg, &err)) {
+			fatal_exit("TSIG configuration error: %s",
+				err ? err : "unknown");
+		}
+	}
+
 	/* process raw response-ip configuration data */
 	if(!(daemon->env->respip_set = respip_set_create()))
 		fatal_exit("Could not create response IP set");
@@ -1214,6 +1231,12 @@ daemon_cleanup(struct daemon* daemon)
 		worker_delete(daemon->workers[i]);
 	free(daemon->workers);
 	daemon->workers = NULL;
+	/* Workers held non-owning references to the TSIG table via
+	 * outside_network->tsig_servers. Now that the workers (and
+	 * their outside_network instances) are gone, it's safe to
+	 * release the table. */
+	tsig_server_table_delete(daemon->tsig_servers);
+	daemon->tsig_servers = NULL;
 	/* Unless we're trying to keep the cache, worker alloc_caches should be
 	 * cleared and freed here. We do this after deleting workers to
 	 * guarantee that the alloc caches are valid throughout the lifetime

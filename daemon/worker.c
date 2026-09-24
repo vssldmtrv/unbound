@@ -2370,6 +2370,9 @@ worker_init(struct worker* worker, struct config_file *cfg,
 		worker_delete(worker);
 		return 0;
 	}
+	/* Non-owning reference to the daemon-wide TSIG address->key
+	 * table. NULL when no TSIG is configured. */
+	worker->back->tsig_servers = worker->daemon->tsig_servers;
 	iterator_set_ip46_support(&worker->daemon->mods, worker->daemon->env,
 		worker->back);
 	/* start listening to commands */

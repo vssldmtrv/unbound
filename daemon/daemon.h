@@ -58,6 +58,7 @@ struct ub_randstate;
 struct daemon_remote;
 struct respip_set;
 struct shm_main_info;
+struct tsig_server_table;
 struct doq_table;
 struct cookie_secrets;
 struct fast_reload_thread;
@@ -176,6 +177,12 @@ struct daemon {
 #endif
 	/** the doq connection table */
 	struct doq_table* doq_table;
+	/** TSIG address->key runtime lookup table, or NULL if the
+	 * config does not define any tsig-key / server-tsig entries.
+	 * Built in daemon_fork(), torn down in daemon_cleanup().
+	 * Read-only once built; workers reference it non-owning via
+	 * their outside_network->tsig_servers pointer. */
+	struct tsig_server_table* tsig_servers;
 	/** reuse existing cache on reload if other conditions allow it. */
 	int reuse_cache;
 	/** the EDNS cookie secrets from the cookie-secret-file */

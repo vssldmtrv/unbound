@@ -65,6 +65,7 @@ struct port_if;
 struct sldns_buffer;
 struct serviced_query;
 struct dt_env;
+struct tsig_server_table;
 struct edns_option;
 struct module_env;
 struct module_qstate;
@@ -156,6 +157,9 @@ struct outside_network {
 	/** dnstap environment */
 	struct dt_env* dtenv;
 #endif
+	/** TSIG address->key lookup table (non-owning). NULL if disabled.
+	 * See services/tsig_server.h and doc/tsig.md. */
+	struct tsig_server_table* tsig_servers;
 	/** maximum segment size of tcp socket */
 	int tcp_mss;
 	/** IP_TOS socket option requested on the sockets */
