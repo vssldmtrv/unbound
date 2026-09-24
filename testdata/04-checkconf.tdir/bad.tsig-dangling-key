@@ -1,0 +1,9 @@
+server:
+	chroot: ""
+	username: ""
+	directory: "."
+	pidfile: ""
+
+server-tsig:
+	address: 10.53.0.1
+	key: "does-not-exist."

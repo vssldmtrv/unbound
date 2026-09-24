@@ -1,3 +1,17 @@
+24 September 2026: d073579
+	- Feature: outgoing TSIG signing on a per-nameserver basis.
+	  Add top-level `tsig-key:` (name + BIND-format key-file) and
+	  `server-tsig:` (address + key name) config blocks. When the
+	  destination IP of an outgoing query matches a `server-tsig`
+	  binding, the query is signed with HMAC-SHA256 TSIG per
+	  RFC 8945 with fudge 300s. Address match is IP-only, ignoring
+	  port; v4/v6 are separate entries. hmac-sha256 is the only
+	  supported algorithm in this release. Response TSIG is not
+	  verified. All config errors (missing file, wrong algorithm,
+	  malformed base64, duplicate name, duplicate address, dangling
+	  key reference) are hard failures at daemon startup and in
+	  `unbound-checkconf`. See doc/tsig.md for the full design.
+
 24 July 2026: Wouter
 	- Merge #1433 from jisakiel: Add new static zone type
 	  block_aaaa to suppress AAAA queries.

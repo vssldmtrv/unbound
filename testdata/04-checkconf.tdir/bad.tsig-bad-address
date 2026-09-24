@@ -1,0 +1,13 @@
+server:
+	chroot: ""
+	username: ""
+	directory: "."
+	pidfile: ""
+
+tsig-key:
+	name: "tsig-good.test."
+	key-file: "tsig.good.key"
+
+server-tsig:
+	address: not-an-ip
+	key: "tsig-good.test."

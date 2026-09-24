@@ -48,7 +48,11 @@ o winevent - do not go more than 64 fds (by polling with select one by
 * dTLS, TLS, look to need special port numbers, cert storage, recent libssl.
 * aggressive negative caching for NSEC, NSEC3.
 * multiple queries per question, server exploration, server selection.
-* support TSIG on queries, for validating resolver deployment.
+* [partial] Outgoing TSIG signing per destination address is supported
+  (hmac-sha256 only, forward/stub/recursion uniformly, response TSIG
+  not verified). See doc/tsig.md and the `tsig-key:` / `server-tsig:`
+  directives in doc/unbound.conf.rst. Response verification and
+  additional algorithms are still TODO.
 * retry-mode, where a bogus result triggers a retry-mode query, where a list
   of responses over a time interval is collected, and each is validated.
   or try in TCP mode. Do not 'try all servers several times', since we must

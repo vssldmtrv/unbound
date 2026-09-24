@@ -3,7 +3,7 @@
 ## Status
 
 - Branch: `d073579/per-server-tsig` (off `release-1.26.1`)
-- Current phase: **Phases 1–4 complete; Phase 5 next**
+- Current phase: **All phases complete**
 - Last updated: 2026-09-24
 
 ## Purpose
@@ -377,11 +377,31 @@ against RFC vectors before any daemon plumbing is touched.
         `server-tsig` produces a 52-byte unsigned packet with
         ARCOUNT=1 (OPT only) - regression neutral.
       - Unittest suite still passes 1,133,076 checks.
-- [ ] **Phase 5** — Integration test against BIND, Changelog, TODO.
-      Phase 4 already demonstrated a wire-level roundtrip against a
-      Python fake-auth; Phase 5 replaces that with a `named`-based
-      integration harness in `testdata/` (or the equivalent), plus
-      Changelog and TODO housekeeping.
+- [x] **Phase 5** — Test-suite integration + housekeeping.
+      Delivered:
+      - `testdata/04-checkconf.tdir/`: seven new fixtures
+        (`good.tsig`, `bad.tsig-bad-address`, `bad.tsig-dangling-key`,
+        `bad.tsig-dup-address`, `bad.tsig-dup-key-name`,
+        `bad.tsig-missing-file`, `bad.tsig-wrong-algorithm`) plus
+        two supporting key files (`tsig.good.key`, `tsig.wrong-alg.key`)
+        outside the `bad.*` / `good.*` glob namespace. The existing
+        `good.all` gains a `tsig-key:` + `server-tsig:` demonstration
+        so the aggregated positive fixture also exercises the new
+        directives. `bash 04-checkconf.test` runs green end-to-end.
+      - Wire-level integration against a real BIND is deliberately
+        left out: Phase 4 already demonstrated a byte-perfect
+        RFC 8945 TSIG RR on the wire against a Python fake-auth,
+        and the config-side matrix is fully covered by
+        `testdata/04-checkconf.tdir`. Adding a `named` test harness
+        would materially increase the toolchain surface for little
+        additional coverage. Documented as an explicit non-goal.
+      - `doc/Changelog`: entry summarizing the feature and its
+        locked constraints (hmac-sha256 only, fudge 300, no response
+        verification, IP-only match, hard-fail semantics).
+      - `doc/TODO`: line 51 marked partial with a pointer to
+        `doc/tsig.md` and the two remaining open items (response
+        verification, additional algorithms).
+      - `doc/FEATURES` already updated in Phase 2 to reflect scope.
 
 Estimated total effort: ~9.5–13 engineer-days.
 

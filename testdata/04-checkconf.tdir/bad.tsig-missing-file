@@ -1,0 +1,9 @@
+server:
+	chroot: ""
+	username: ""
+	directory: "."
+	pidfile: ""
+
+tsig-key:
+	name: "tsig-good.test."
+	key-file: "no-such-file-on-disk.key"

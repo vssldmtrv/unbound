@@ -248,3 +248,11 @@ forward-zone:
 forward-zone:
  	name: "example.org"
  	forward-host: fwd.example.com
+
+# TSIG-signed outgoing queries (per-nameserver binding).
+tsig-key:
+	name: "tsig-good.test."
+	key-file: "tsig.good.key"
+server-tsig:
+	address: 10.53.0.99
+	key: "tsig-good.test."
