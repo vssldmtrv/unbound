@@ -50,6 +50,7 @@
 #include "util/module.h"
 #include "util/net_help.h"
 #include "util/regional.h"
+#include "util/tsig.h"
 #include "iterator/iterator.h"
 #include "iterator/iter_fwd.h"
 #include "iterator/iter_hints.h"
@@ -1178,6 +1179,77 @@ check_auth(struct config_file* cfg)
 	auth_zones_delete(az);
 }
 
+/** check TSIG configuration:
+ *   - every tsig-key file loads, parses, and validates as hmac-sha256;
+ *   - the owner name inside the file matches the configured name;
+ *   - no two tsig-key entries share the same name;
+ *   - every server-tsig address parses as an IPv4 or IPv6 literal;
+ *   - no two server-tsig entries share the same address;
+ *   - every server-tsig references a defined tsig-key.
+ * Any failure aborts checkconf with a specific error message.
+ */
+static void
+check_tsig(struct config_file* cfg)
+{
+	struct config_tsig_key* k;
+	struct config_tsig_key* k2;
+	struct config_server_tsig* s;
+	struct config_server_tsig* s2;
+
+	/* Validate tsig-key entries. */
+	for(k = cfg->tsig_keys; k; k = k->next) {
+		char* err = NULL;
+		struct tsig_key* loaded;
+		if(!k->name || !*k->name)
+			fatal_exit("tsig-key: name is required");
+		if(!k->key_file || !*k->key_file)
+			fatal_exit("tsig-key '%s': key-file is required",
+				k->name);
+		for(k2 = k->next; k2; k2 = k2->next) {
+			if(k2->name && strcasecmp(k->name, k2->name) == 0)
+				fatal_exit("duplicate tsig-key name '%s'",
+					k->name);
+		}
+		loaded = tsig_key_load_bind_file(k->key_file, k->name, &err);
+		if(!loaded) {
+			fatal_exit("tsig-key '%s': %s",
+				k->name, err?err:"load failed");
+		}
+		free(err);
+		tsig_key_delete(loaded);
+	}
+	/* Validate server-tsig entries. */
+	for(s = cfg->server_tsigs; s; s = s->next) {
+		struct sockaddr_storage addr;
+		socklen_t addrlen = 0;
+		int found;
+		if(!s->address || !*s->address)
+			fatal_exit("server-tsig: address is required");
+		if(!s->key_name || !*s->key_name)
+			fatal_exit("server-tsig '%s': key is required",
+				s->address);
+		if(!ipstrtoaddr(s->address, UNBOUND_DNS_PORT,
+			&addr, &addrlen))
+			fatal_exit("server-tsig: cannot parse address '%s'",
+				s->address);
+		for(s2 = s->next; s2; s2 = s2->next) {
+			if(s2->address && strcmp(s->address, s2->address) == 0)
+				fatal_exit("duplicate server-tsig address '%s'",
+					s->address);
+		}
+		found = 0;
+		for(k = cfg->tsig_keys; k; k = k->next) {
+			if(k->name && strcasecmp(k->name, s->key_name) == 0) {
+				found = 1;
+				break;
+			}
+		}
+		if(!found)
+			fatal_exit("server-tsig '%s' references undefined "
+				"tsig-key '%s'", s->address, s->key_name);
+	}
+}
+
 /** check config file */
 static void
 checkconf(const char* cfgfile, const char* opt, int final, int quiet)
@@ -1213,6 +1285,7 @@ checkconf(const char* cfgfile, const char* opt, int final, int quiet)
 	check_fwd(cfg);
 	check_hints(cfg);
 	check_auth(cfg);
+	check_tsig(cfg);
 	if(!quiet) { printf("unbound-checkconf: no errors in %s\n", cfgfile); }
 	config_delete(cfg);
 }

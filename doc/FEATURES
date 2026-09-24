@@ -62,7 +62,10 @@ UDP and TCP are used to request from upstream servers.
 SSL wrapped TCP service can be used upstream and provided downstream.
 Multiple queries can be made over a TCP stream.
 
-No TSIG support at this time.
+Outgoing TSIG signing is supported per destination address
+(HMAC-SHA256 only, fudge fixed at 300s, forward/stub/recursion
+uniformly). See doc/tsig.md for scope and doc/unbound.conf.rst
+for configuration. Response TSIG is not verified.
 No SIG0 support at this time.
 No dTLS support at this time.
 This is not a DNS statistics package, but some operationally useful

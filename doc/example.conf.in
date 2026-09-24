@@ -1260,6 +1260,37 @@ remote-control:
 # 	name: "example.org"
 # 	forward-host: fwd.example.com
 
+# Outgoing TSIG (Transaction SIGnature) signing per RFC 8945.
+# When Unbound sends a query to an address listed in a server-tsig
+# block, the query is signed with the referenced tsig-key using
+# HMAC-SHA256. Used to satisfy authoritative servers that require
+# TSIG on inbound queries (e.g. BIND's `allow-query { key "..."; };`).
+#
+# The key file is BIND format (as produced by `tsig-keygen`):
+#     key "auth-cluster.corp." {
+#         algorithm hmac-sha256;
+#         secret "<base64-secret>";
+#     };
+#
+# Only hmac-sha256 is supported. Fudge is fixed at 300 s.
+# Address match is IP-only, ignoring port; list v4 and v6 separately.
+# Any configuration error (missing file, wrong algorithm, malformed
+# base64, dangling key reference, duplicate address) is a hard fail
+# at startup and in `unbound-checkconf`. Response TSIG is not
+# verified.
+#
+# tsig-key:
+# 	name: "auth-cluster.corp."
+# 	key-file: "/etc/unbound/auth-cluster.key"
+#
+# server-tsig:
+# 	address: 10.1.1.1
+# 	key: "auth-cluster.corp."
+#
+# server-tsig:
+# 	address: 2001:db8::1
+# 	key: "auth-cluster.corp."
+
 # Authority zones
 # The data for these zones is kept locally, from a file or downloaded.
 # The data can be served to downstream clients, or used instead of the

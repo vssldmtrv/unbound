@@ -350,6 +350,11 @@ forward-no-cache{COLON}		{ YDVAR(1, VAR_FORWARD_NO_CACHE) }
 forward-ssl-upstream{COLON}	{ YDVAR(1, VAR_FORWARD_SSL_UPSTREAM) }
 forward-tls-upstream{COLON}	{ YDVAR(1, VAR_FORWARD_SSL_UPSTREAM) }
 forward-tcp-upstream{COLON}	{ YDVAR(1, VAR_FORWARD_TCP_UPSTREAM) }
+tsig-key{COLON}			{ YDVAR(0, VAR_TSIG_KEY) }
+key-file{COLON}			{ YDVAR(1, VAR_KEY_FILE) }
+server-tsig{COLON}		{ YDVAR(0, VAR_SERVER_TSIG) }
+address{COLON}			{ YDVAR(1, VAR_ADDRESS) }
+key{COLON}			{ YDVAR(1, VAR_KEY) }
 auth-zone{COLON}		{ YDVAR(0, VAR_AUTH_ZONE) }
 rpz{COLON}			{ YDVAR(0, VAR_RPZ) }
 tags{COLON}			{ YDVAR(1, VAR_TAGS) }

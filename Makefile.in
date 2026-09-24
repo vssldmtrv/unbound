@@ -1436,8 +1436,8 @@ unitinfra.lo unitinfra.o: $(srcdir)/testcode/unitinfra.c config.h $(srcdir)/test
  $(srcdir)/dnscrypt/cert.h \
  $(srcdir)/util/config_file.h $(srcdir)/util/net_help.h $(srcdir)/util/random.h
 unittsig.lo unittsig.o: $(srcdir)/testcode/unittsig.c config.h $(srcdir)/testcode/unitmain.h \
- $(srcdir)/util/log.h $(srcdir)/util/tsig.h $(srcdir)/sldns/sbuffer.h $(srcdir)/sldns/pkthdr.h \
- $(srcdir)/sldns/rrdef.h
+ $(srcdir)/util/log.h $(srcdir)/util/tsig.h $(srcdir)/util/config_file.h \
+ $(srcdir)/sldns/sbuffer.h $(srcdir)/sldns/pkthdr.h $(srcdir)/sldns/rrdef.h
 acl_list.lo acl_list.o: $(srcdir)/daemon/acl_list.c config.h $(srcdir)/daemon/acl_list.h \
  $(srcdir)/util/storage/dnstree.h $(srcdir)/util/rbtree.h $(srcdir)/services/view.h $(srcdir)/util/locks.h \
  $(srcdir)/util/log.h $(srcdir)/util/regional.h $(srcdir)/util/config_file.h $(srcdir)/sldns/rrdef.h \
@@ -1694,7 +1694,7 @@ unbound-checkconf.lo unbound-checkconf.o: $(srcdir)/smallapp/unbound-checkconf.c
  $(srcdir)/util/config_file.h $(srcdir)/sldns/rrdef.h $(srcdir)/util/module.h $(srcdir)/util/storage/lruhash.h \
  $(srcdir)/util/locks.h $(srcdir)/util/data/msgreply.h $(srcdir)/util/data/packed_rrset.h \
  $(srcdir)/util/data/msgparse.h $(srcdir)/sldns/pkthdr.h $(srcdir)/util/net_help.h $(srcdir)/util/random.h \
- $(srcdir)/util/regional.h $(srcdir)/iterator/iterator.h $(srcdir)/services/outbound_list.h \
+ $(srcdir)/util/regional.h $(srcdir)/util/tsig.h $(srcdir)/iterator/iterator.h $(srcdir)/services/outbound_list.h \
  $(srcdir)/iterator/iter_fwd.h $(srcdir)/util/rbtree.h $(srcdir)/iterator/iter_hints.h \
  $(srcdir)/util/storage/dnstree.h $(srcdir)/validator/validator.h $(srcdir)/validator/val_utils.h \
  $(srcdir)/validator/val_nsec3.h $(srcdir)/services/localzone.h $(srcdir)/services/view.h \

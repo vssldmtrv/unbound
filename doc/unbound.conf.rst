@@ -3866,6 +3866,75 @@ cache).
 
     Default: no
 
+.. _unbound.conf.tsig:
+
+TSIG (Outgoing Signing) Options
+-------------------------------
+
+These options let Unbound sign outgoing DNS queries with TSIG
+(:RFC:`8945`) so that authoritative servers that require TSIG on
+inbound queries (e.g. BIND configured with
+``allow-query { key "..."; };``) will accept them. Signing is applied
+per destination address: when Unbound sends a query to a listed IP,
+the query is signed. This covers forward-zone, stub-zone, normal
+recursion, priming, and target-fetch traffic uniformly.
+
+The scope in this release is deliberately narrow:
+
+* Only **HMAC-SHA256** is supported. The algorithm is read from the
+  key file and must match.
+* The **fudge** value is fixed at 300 seconds.
+* Only outgoing queries are signed. The TSIG in server responses is
+  **not** verified. Use TSIG here as an *authentication token to the
+  upstream*, not as a channel-security mechanism.
+* Address matching is IP-only and ignores port; list IPv4 and IPv6
+  addresses of the same server as separate entries.
+* CIDR ranges are not supported; list each IP explicitly.
+* All configuration errors — missing file, wrong algorithm, malformed
+  base64 secret, empty secret, dangling ``server-tsig`` key reference,
+  duplicate ``server-tsig`` address, duplicate ``tsig-key`` name — are
+  hard failures at daemon startup and in ``unbound-checkconf``.
+
+**tsig-key:** *(top-level block)*
+    Defines a reusable TSIG key. Referenced by ``key:`` inside
+    ``server-tsig:`` entries. Multiple ``tsig-key:`` blocks may appear.
+
+    ``name:`` *<quoted string>*
+        Logical name of the key. Must match the owner name inside the
+        BIND-format key file (case-insensitive, trailing dot optional).
+
+    ``key-file:`` *<quoted path>*
+        Absolute path to a BIND-format key file, e.g. one produced by
+        ``tsig-keygen``. The file must contain a single
+        ``key "NAME" { algorithm hmac-sha256; secret "<base64>"; };``
+        stanza. C-style, C++-style and shell comments are tolerated.
+
+**server-tsig:** *(top-level block)*
+    Binds a destination IP address to a TSIG key. Multiple
+    ``server-tsig:`` blocks may appear.
+
+    ``address:`` *<IPv4 or IPv6 literal>*
+        Destination address. Port is ignored during matching; both
+        v4 and v6 addresses of the same logical server must be listed
+        as separate entries.
+
+    ``key:`` *<quoted string>*
+        Name of a ``tsig-key`` defined above.
+
+Example::
+
+    tsig-key:
+        name: "auth-cluster.corp."
+        key-file: "/etc/unbound/auth-cluster.key"
+
+    server-tsig:
+        address: 10.1.1.1
+        key: "auth-cluster.corp."
+
+    server-tsig:
+        address: 2001:db8::1
+        key: "auth-cluster.corp."
+
 .. _unbound.conf.auth:
 
 Authority Zone Options

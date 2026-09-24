@@ -43,6 +43,8 @@
 #define UTIL_CONFIG_FILE_H
 #include "sldns/rrdef.h"
 struct config_stub;
+struct config_tsig_key;
+struct config_server_tsig;
 struct config_auth;
 struct config_view;
 struct config_strlist;
@@ -262,6 +264,14 @@ struct config_file {
 	struct config_auth* auths;
 	/** the views definitions, linked list */
 	struct config_view* views;
+	/** TSIG key definitions (name + key-file), linked list.
+	 * Referenced by name from server-tsig entries.
+	 * See doc/tsig.md and util/tsig.h. */
+	struct config_tsig_key* tsig_keys;
+	/** Per-server TSIG bindings (address -> key name), linked list.
+	 * When Unbound sends a query whose destination IP matches an
+	 * entry here, the query is signed with the referenced key. */
+	struct config_server_tsig* server_tsigs;
 	/** list of donotquery addresses, linked list */
 	struct config_strlist* donotqueryaddrs;
 #ifdef CLIENT_SUBNET
@@ -821,6 +831,36 @@ extern size_t http2_query_buffer_max;
 extern size_t http2_response_buffer_max;
 
 /**
+ * TSIG key definition (top-level `tsig-key:` block).
+ * Names a shared secret loaded from a BIND-format key file.
+ * See util/tsig.{h,c} for the loader and signer.
+ */
+struct config_tsig_key {
+	/** next in list */
+	struct config_tsig_key* next;
+	/** logical name of the key (referenced by server-tsig entries).
+	 * Must match the owner name inside the BIND key file. */
+	char* name;
+	/** filesystem path to the BIND key file */
+	char* key_file;
+};
+
+/**
+ * Per-nameserver TSIG binding (top-level `server-tsig:` block).
+ * Binds an IPv4/IPv6 address to a tsig-key by name. When Unbound
+ * sends a query to a matching destination, the query is signed.
+ * Address match is IP-only and ignores port; v4/v6 are separate entries.
+ */
+struct config_server_tsig {
+	/** next in list */
+	struct config_server_tsig* next;
+	/** destination IP address (text form) */
+	char* address;
+	/** referenced key name (must resolve to a tsig-key entry) */
+	char* key_name;
+};
+
+/**
  * Stub config options
  */
 struct config_stub {
@@ -1232,6 +1272,18 @@ void config_delview(struct config_view* p);
  * @param list: list.
  */
 void config_delviews(struct config_view* list);
+
+/**
+ * Delete items in config tsig-key list.
+ * @param list: list.
+ */
+void config_deltsigkeys(struct config_tsig_key* list);
+
+/**
+ * Delete items in config server-tsig list.
+ * @param list: list.
+ */
+void config_delservertsigs(struct config_server_tsig* list);
 
 /** check if config for remote control turns on IP-address interface
  * with certificates or a named pipe without certificates. */

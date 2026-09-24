@@ -28,6 +28,7 @@
 
 #include "config.h"
 #include "testcode/unitmain.h"
+#include "util/config_file.h"
 #include "util/log.h"
 #include "util/tsig.h"
 
@@ -696,6 +697,116 @@ test_sign_determinism_and_kat(void)
 }
 
 /* ------------------------------------------------------------------ */
+/* Config parser: tsig-key and server-tsig blocks                     */
+/* ------------------------------------------------------------------ */
+
+static struct config_file*
+parse_config_string(const char* body)
+{
+	char* path = write_tempfile(body);
+	struct config_file* cfg = config_create();
+	unit_assert(cfg != NULL);
+	unit_assert(config_read(cfg, path, NULL));
+	unlink(path);
+	free(path);
+	return cfg;
+}
+
+static void
+test_config_parse_tsig_blocks(void)
+{
+	struct config_file* cfg;
+	struct config_tsig_key* k;
+	struct config_server_tsig* s;
+	int nkeys, nsrv;
+
+	unit_show_feature("config: tsig-key and server-tsig block parsing");
+
+	cfg = parse_config_string(
+		"server:\n"
+		"    verbosity: 0\n"
+		"    use-syslog: no\n"
+		"    do-daemonize: no\n"
+		"    chroot: \"\"\n"
+		"    username: \"\"\n"
+		"    directory: \"\"\n"
+		"    pidfile: \"\"\n"
+		"tsig-key:\n"
+		"    name: \"k1.example.\"\n"
+		"    key-file: \"/etc/unbound/k1.key\"\n"
+		"tsig-key:\n"
+		"    name: \"k2.example.\"\n"
+		"    key-file: \"/etc/unbound/k2.key\"\n"
+		"server-tsig:\n"
+		"    address: 10.0.0.1\n"
+		"    key: \"k1.example.\"\n"
+		"server-tsig:\n"
+		"    address: 2001:db8::1\n"
+		"    key: \"k2.example.\"\n"
+	);
+
+	nkeys = 0;
+	for(k = cfg->tsig_keys; k; k = k->next) {
+		nkeys++;
+		unit_assert(k->name != NULL);
+		unit_assert(k->key_file != NULL);
+	}
+	unit_assert(nkeys == 2);
+
+	nsrv = 0;
+	for(s = cfg->server_tsigs; s; s = s->next) {
+		nsrv++;
+		unit_assert(s->address != NULL);
+		unit_assert(s->key_name != NULL);
+	}
+	unit_assert(nsrv == 2);
+
+	/* The parser prepends to the head of the list, so the last-declared
+	 * entry appears first. Spot-check by walking. */
+	{
+		int found_k1 = 0, found_k2 = 0;
+		for(k = cfg->tsig_keys; k; k = k->next) {
+			if(strcmp(k->name, "k1.example.") == 0) found_k1 = 1;
+			if(strcmp(k->name, "k2.example.") == 0) found_k2 = 1;
+		}
+		unit_assert(found_k1 && found_k2);
+	}
+	{
+		int found_v4 = 0, found_v6 = 0;
+		for(s = cfg->server_tsigs; s; s = s->next) {
+			if(strcmp(s->address, "10.0.0.1") == 0)
+				found_v4 = 1;
+			if(strcmp(s->address, "2001:db8::1") == 0)
+				found_v6 = 1;
+		}
+		unit_assert(found_v4 && found_v6);
+	}
+
+	config_delete(cfg);
+}
+
+static void
+test_config_empty_still_parses(void)
+{
+	/* Absence of any tsig-key / server-tsig must be fine. */
+	struct config_file* cfg;
+	unit_show_feature("config: no tsig-key/server-tsig means empty lists");
+	cfg = parse_config_string(
+		"server:\n"
+		"    verbosity: 0\n"
+		"    use-syslog: no\n"
+		"    do-daemonize: no\n"
+		"    chroot: \"\"\n"
+		"    username: \"\"\n"
+		"    directory: \"\"\n"
+		"    pidfile: \"\"\n"
+	);
+	unit_assert(cfg->tsig_keys == NULL);
+	unit_assert(cfg->server_tsigs == NULL);
+	config_delete(cfg);
+}
+
+/* ------------------------------------------------------------------ */
 /* Entry point                                                        */
 /* ------------------------------------------------------------------ */
 
@@ -713,6 +824,8 @@ tsig_test(void)
 	test_bind_key_load_missing_file();
 	test_sign_structural();
 	test_sign_determinism_and_kat();
+	test_config_parse_tsig_blocks();
+	test_config_empty_still_parses();
 }
 
 #else /* !HAVE_SSL */

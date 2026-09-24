@@ -1737,6 +1737,48 @@ config_delviews(struct config_view* p)
 	}
 }
 
+/** delete one tsig-key entry */
+static void
+config_deltsigkey(struct config_tsig_key* p)
+{
+	if(!p) return;
+	free(p->name);
+	free(p->key_file);
+	free(p);
+}
+
+void
+config_deltsigkeys(struct config_tsig_key* p)
+{
+	struct config_tsig_key* np;
+	while(p) {
+		np = p->next;
+		config_deltsigkey(p);
+		p = np;
+	}
+}
+
+/** delete one server-tsig entry */
+static void
+config_delservertsig(struct config_server_tsig* p)
+{
+	if(!p) return;
+	free(p->address);
+	free(p->key_name);
+	free(p);
+}
+
+void
+config_delservertsigs(struct config_server_tsig* p)
+{
+	struct config_server_tsig* np;
+	while(p) {
+		np = p->next;
+		config_delservertsig(p);
+		p = np;
+	}
+}
+
 void
 config_del_strarray(char** array, int num)
 {
@@ -1792,6 +1834,8 @@ config_delete(struct config_file* cfg)
 	config_delstubs(cfg->forwards);
 	config_delauths(cfg->auths);
 	config_delviews(cfg->views);
+	config_deltsigkeys(cfg->tsig_keys);
+	config_delservertsigs(cfg->server_tsigs);
 	config_delstrlist(cfg->donotqueryaddrs);
 	config_delstrlist(cfg->root_hints);
 #ifdef CLIENT_SUBNET

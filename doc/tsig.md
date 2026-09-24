@@ -3,7 +3,7 @@
 ## Status
 
 - Branch: `d073579/per-server-tsig` (off `release-1.26.1`)
-- Current phase: **Phase 1 complete; Phase 2 next**
+- Current phase: **Phases 1–2 complete; Phase 3 next**
 - Last updated: 2026-09-24
 
 ## Purpose
@@ -248,14 +248,53 @@ against RFC vectors before any daemon plumbing is touched.
         `testcode/unitmain.c`.
       - `make unittest` passes; the full `unbound`, `unbound-checkconf`,
         `unbound-control`, `unbound-host` and `libunbound` link cleanly.
-- [ ] **Phase 2** — `services/tsig_server.{c,h}`: address→key table, lookup, swap.
-- [ ] **Phase 3** — Config: `tsig-key` and `server-tsig` grammar + parser
-      + `struct config_file` fields + free/apply. Daemon wiring + reload.
+- [x] **Phase 2** — Config surface: `tsig-key` and `server-tsig` grammar +
+      parser + `struct config_file` fields + free helpers +
+      `unbound-checkconf` validation + docs.
+      Delivered:
+      - `struct config_tsig_key`, `struct config_server_tsig`, and the
+        `tsig_keys` / `server_tsigs` list fields on `struct config_file`
+        (util/config_file.h, util/config_file.c).
+      - `config_deltsigkeys()` / `config_delservertsigs()` free helpers,
+        called from `config_delete()`.
+      - Lexer keywords `tsig-key:`, `server-tsig:`, `key-file:`,
+        `address:`, `key:` (util/configlexer.lex); `name:` is reused
+        from the existing keyword pool. New tokens `VAR_TSIG_KEY`,
+        `VAR_KEY_FILE`, `VAR_SERVER_TSIG`, `VAR_ADDRESS`, `VAR_KEY`.
+      - Grammar rules `tsigkey_clause` and `servertsig_clause` added
+        to `toplevelvar` (util/configparser.y). Each rejects missing
+        required subdirectives and duplicate assignments with a
+        specific parse-time error.
+      - `unbound-checkconf` gains `check_tsig()`: loads every
+        `tsig-key` file (via `tsig_key_load_bind_file` with owner-name
+        cross-check), enforces hmac-sha256, rejects duplicate
+        `tsig-key` names, rejects unparseable `server-tsig` addresses,
+        rejects duplicate `server-tsig` addresses, and rejects
+        `server-tsig` entries pointing at undefined `tsig-key` names.
+        All errors are hard fails via `fatal_exit`.
+      - Unit tests: two new feature groups in `testcode/unittsig.c`
+        cover positive parse (multiple keys + multiple v4/v6 servers,
+        list traversal, name/address integrity) and the empty-config
+        case (`cfg->tsig_keys` and `cfg->server_tsigs` are NULL when
+        no blocks are declared). All 12 TSIG feature groups pass.
+      - Docs: `doc/unbound.conf.rst` gains a "TSIG (Outgoing Signing)
+        Options" section documenting the two blocks and every locked
+        constraint. `doc/example.conf.in` gains a commented-out
+        template. `doc/FEATURES` no longer says "No TSIG support".
+      - `Makefile.in` gains `util/tsig.h` in the checkconf and
+        unittsig dependency rules.
+      - Manual `unbound-checkconf` matrix verified: valid config
+        passes; duplicate address, dangling key reference, unparseable
+        address, wrong algorithm in key file, and owner-name mismatch
+        each yield a distinct fatal error with the correct exit code.
+- [ ] **Phase 3** — `services/tsig_server.{c,h}`: build the resolved
+      key store and address→key table at daemon apply time; atomic
+      swap on reload; hang the table off `struct outside_network`.
+      This is the runtime companion to Phase 2's static config.
 - [ ] **Phase 4** — Outnet integration: `sq->tsig_key`, lookup at
-      `serviced_create`, sign at UDP/TCP chokepoints, EDNS size budgeting.
-- [ ] **Phase 5** — `unbound-checkconf` validation.
-- [ ] **Phase 6** — Integration test against BIND + docs (`unbound.conf`,
-      `FEATURES`, `Changelog`, `TODO`).
+      `serviced_create`, sign at UDP/TCP chokepoints, EDNS size
+      budgeting.
+- [ ] **Phase 5** — Integration test against BIND, Changelog, TODO.
 
 Estimated total effort: ~9.5–13 engineer-days.
 

@@ -220,6 +220,7 @@ extern struct config_parser_state* cfg_parser;
 %token VAR_MAX_GLOBAL_QUOTA VAR_HARDEN_UNVERIFIED_GLUE VAR_LOG_TIME_ISO
 %token VAR_VAL_VALIDATION_ATTEMPTS VAR_VAL_HASH_ATTEMPTS
 %token VAR_ITER_SCRUB_PROMISCUOUS VAR_LOG_THREAD_ID
+%token VAR_TSIG_KEY VAR_KEY_FILE VAR_SERVER_TSIG VAR_ADDRESS VAR_KEY
 
 %%
 toplevelvars: /* empty */ | toplevelvars toplevelvar ;
@@ -229,6 +230,7 @@ toplevelvar: serverstart contents_server | stub_clause |
 	dnscstart contents_dnsc | cachedbstart contents_cachedb |
 	ipsetstart contents_ipset | authstart contents_auth |
 	rpzstart contents_rpz | dynlibstart contents_dl |
+	tsigkey_clause | servertsig_clause |
 	force_toplevel
 	;
 force_toplevel: VAR_FORCE_TOPLEVEL
@@ -418,6 +420,108 @@ contents_forward: contents_forward content_forward
 	| ;
 content_forward: forward_name | forward_host | forward_addr | forward_first |
 	forward_no_cache | forward_ssl_upstream | forward_tcp_upstream
+	;
+/* tsig-key: block */
+tsigkey_clause: tsigkeystart contents_tsigkey
+	{
+		/* tsig-key end */
+		if(cfg_parser->cfg->tsig_keys &&
+			!cfg_parser->cfg->tsig_keys->name)
+			yyerror("tsig-key without name");
+		if(cfg_parser->cfg->tsig_keys &&
+			!cfg_parser->cfg->tsig_keys->key_file)
+			yyerror("tsig-key without key-file");
+	}
+	;
+tsigkeystart: VAR_TSIG_KEY
+	{
+		struct config_tsig_key* t;
+		OUTYY(("\nP(tsig_key:)\n"));
+		cfg_parser->started_toplevel = 1;
+		t = (struct config_tsig_key*)calloc(1,
+			sizeof(struct config_tsig_key));
+		if(t) {
+			t->next = cfg_parser->cfg->tsig_keys;
+			cfg_parser->cfg->tsig_keys = t;
+		} else {
+			yyerror("out of memory");
+		}
+	}
+	;
+contents_tsigkey: contents_tsigkey content_tsigkey
+	| ;
+content_tsigkey: tsigkey_name | tsigkey_keyfile
+	;
+tsigkey_name: VAR_NAME STRING_ARG
+	{
+		OUTYY(("P(tsig-key name:%s)\n", $2));
+		if(cfg_parser->cfg->tsig_keys->name)
+			yyerror("tsig-key name override, there must be one "
+				"name for one tsig-key");
+		free(cfg_parser->cfg->tsig_keys->name);
+		cfg_parser->cfg->tsig_keys->name = $2;
+	}
+	;
+tsigkey_keyfile: VAR_KEY_FILE STRING_ARG
+	{
+		OUTYY(("P(tsig-key key-file:%s)\n", $2));
+		if(cfg_parser->cfg->tsig_keys->key_file)
+			yyerror("tsig-key key-file override, there must be "
+				"one key-file for one tsig-key");
+		free(cfg_parser->cfg->tsig_keys->key_file);
+		cfg_parser->cfg->tsig_keys->key_file = $2;
+	}
+	;
+/* server-tsig: block */
+servertsig_clause: servertsigstart contents_servertsig
+	{
+		/* server-tsig end */
+		if(cfg_parser->cfg->server_tsigs &&
+			!cfg_parser->cfg->server_tsigs->address)
+			yyerror("server-tsig without address");
+		if(cfg_parser->cfg->server_tsigs &&
+			!cfg_parser->cfg->server_tsigs->key_name)
+			yyerror("server-tsig without key");
+	}
+	;
+servertsigstart: VAR_SERVER_TSIG
+	{
+		struct config_server_tsig* t;
+		OUTYY(("\nP(server_tsig:)\n"));
+		cfg_parser->started_toplevel = 1;
+		t = (struct config_server_tsig*)calloc(1,
+			sizeof(struct config_server_tsig));
+		if(t) {
+			t->next = cfg_parser->cfg->server_tsigs;
+			cfg_parser->cfg->server_tsigs = t;
+		} else {
+			yyerror("out of memory");
+		}
+	}
+	;
+contents_servertsig: contents_servertsig content_servertsig
+	| ;
+content_servertsig: servertsig_address | servertsig_key
+	;
+servertsig_address: VAR_ADDRESS STRING_ARG
+	{
+		OUTYY(("P(server-tsig address:%s)\n", $2));
+		if(cfg_parser->cfg->server_tsigs->address)
+			yyerror("server-tsig address override, there must "
+				"be one address for one server-tsig");
+		free(cfg_parser->cfg->server_tsigs->address);
+		cfg_parser->cfg->server_tsigs->address = $2;
+	}
+	;
+servertsig_key: VAR_KEY STRING_ARG
+	{
+		OUTYY(("P(server-tsig key:%s)\n", $2));
+		if(cfg_parser->cfg->server_tsigs->key_name)
+			yyerror("server-tsig key override, there must be "
+				"one key for one server-tsig");
+		free(cfg_parser->cfg->server_tsigs->key_name);
+		cfg_parser->cfg->server_tsigs->key_name = $2;
+	}
 	;
 view_clause: viewstart contents_view
 	{
